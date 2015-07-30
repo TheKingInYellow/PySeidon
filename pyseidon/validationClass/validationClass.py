@@ -41,7 +41,7 @@ class Validation:
       - simulated = any PySeidon simulation object (i.e. FVCOM or Station)
       - flow = flow comparison by surface flow ('sf'), depth-averaged flow ('daf') or at any depth (float)
     """
-    def __init__(self, observed, simulated, debug=False, debug_plot=False):
+    def __init__(self, observed, simulated, flow='sf', debug=False, debug_plot=False):
         self._debug = debug
         if type(observed)==tuple:
             self._multi = True
@@ -59,6 +59,7 @@ class Validation:
                             ' and ' + simulated._origin_file]
         self.observed = observed
         self.simulated = simulated
+        self.Variables = _load_validation(observed, simulated, flow=flow, debug=debug, debug_plot=debug_plot)
 
         return
 
