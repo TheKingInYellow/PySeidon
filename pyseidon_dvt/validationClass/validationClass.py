@@ -59,9 +59,9 @@ class Validation:
         else:
             self._multi = False
         self._debug_plot = debug_plot
-        if debug: print '-Debug mode on-'   
-        self._nn=nn    
-        if debug and nn: print '-Using nearest neighbour-'        
+        if debug: print '-Debug mode on-'
+        self._nn=nn
+        if debug and nn: print '-Using nearest neighbour-'
         # creates folder to store outputs
         outpath=outpath.replace(" ","_")
         if outpath[-1] is not '/':
@@ -141,7 +141,7 @@ class Validation:
             suites = compareOBS(self.Variables.struct, self.Variables._save_path, threeD,
                                     plot=plot, depth=depth, slack_velo=slack_velo, save_csv=save_csv,
                                     debug=debug, debug_plot=debug_plot)
-                                    
+
             for key in suites:
                 self.Suites[key] = suites[key]
                 vars.append(key)
@@ -200,7 +200,7 @@ class Validation:
         if filename==[]:
             filename = raw_input('Enter filename for csv file: ')
             filename = str(filename)
-            
+
         hasEL=False
         hasUV=False
         commonlist_data = self.Variables.struct['_commonlist_data']
@@ -217,7 +217,7 @@ class Validation:
         obs_lat = self.Variables.struct['obs_lat']
         mod_time = self.Variables.struct['mod_time']
         mod_lat = self.Variables.struct['mod_lat']
-        if hasEL:     
+        if hasEL:
             obs_el =  self.Variables.struct['obs_timeseries']['el'] [:]
             mod_el =  self.Variables.struct['mod_timeseries']['el'][:]
             self.Variables.obs.elCoef = solve(obs_time, obs_el, None, obs_lat,
