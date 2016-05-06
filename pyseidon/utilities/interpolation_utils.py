@@ -611,16 +611,25 @@ def interp_linear_to_nodes(var, xc, yc, x, y):
 
     return  varinterp
 
-def find_nearest_elems(trinodes, nnode):
+def find_nearest_elems(trinodes, nnode, masked=False):
     """For a given node, the surrounding element indices are found.
         Params:
         - trinodes :: FVCOM trinodes, numpy array, dim=(nele, 3)
         - nnode :: Total number of nodes, int
+        - masked :: Returns masked array or not, boolean
         Returns:
-        - numpy array of arrays (irregular dimensions)
+        - numpy array, irregular dims or masked, dim=(nnode,7)
     """
-    return np.array([np.squeeze(np.where(trinodes[:,:]==node))[0] \
+
+    temp = np.array([np.where(trinodes[:,:]==node)[0].astype(float).tolist() \
             for node in xrange(nnode)])
+
+    if masked:
+        return np.ma.masked_invalid(np.asarray([np.append(temp[i], \
+            [np.nan]*(7-len(temp[i]))) for i in xrange(len(temp))]))
+    else:
+        return temp
+
 
 def interp_to_nodes_avg(var, nnode, trinodes, debug=False):
     """Interpolates to nodes by finding all nearest elements and averaging
