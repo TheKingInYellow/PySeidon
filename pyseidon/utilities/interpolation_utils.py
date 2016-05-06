@@ -33,13 +33,13 @@ def closest_point(pt_lon, pt_lat, lon, lat, lonc, latc, tri,
     #                np.square((point_list[:, 1] - points[:, 1, np.newaxis])))
 
     #closest_point_indexes = np.argmin(closest_dist, axis=1)
-    
+
     #Wesley's optimized version of this bottleneck
     point_list0 = point_list[:, 0]
     points0 = points[:, 0, np.newaxis]
     point_list1 = point_list[:, 1]
     points1 = points[:, 1, np.newaxis]
-    
+
     closest_dist = ((point_list0 - points0) *
                     (point_list0 - points0) +
                     (point_list1 - points1) *
@@ -62,10 +62,10 @@ def closest_point(pt_lon, pt_lat, lon, lat, lonc, latc, tri,
     test = -1 * trif.__call__(pt_lon, pt_lat)
     if test: index = np.nan #freak point
 
-    #Thomas' optimized version of this bottleneck    
+    #Thomas' optimized version of this bottleneck
     #closest_point_indexes = np.zeros(points.shape[0])
     #for i in range(points.shape[0]):
-    #    dist=((point_list-points[i,:])**2).sum(axis=1)    
+    #    dist=((point_list-points[i,:])**2).sum(axis=1)
     #    ndx = d.argsort()
     #    closest_point_indexes[i] = ndx[0]
     #if debug: print 'Closest dist: ', closest_dist
@@ -103,13 +103,13 @@ def closest_points( pt_lon, pt_lat, lon, lat, debug=False):
     #                np.square((point_list[:, 1] - points[:, 1, np.newaxis])))
 
     #closest_point_indexes = np.argmin(closest_dist, axis=1)
-    
+
     #Wesley's optimized version of this bottleneck
     point_list0 = point_list[:, 0]
     points0 = points[:, 0, np.newaxis]
     point_list1 = point_list[:, 1]
     points1 = points[:, 1, np.newaxis]
-    
+
     closest_dist = ((point_list0 - points0) *
                     (point_list0 - points0) +
                     (point_list1 - points1) *
@@ -117,10 +117,10 @@ def closest_points( pt_lon, pt_lat, lon, lat, debug=False):
                     )
     closest_point_indexes = np.argmin(closest_dist, axis=1)
 
-    #Thomas' optimized version of this bottleneck    
+    #Thomas' optimized version of this bottleneck
     #closest_point_indexes = np.zeros(points.shape[0])
     #for i in range(points.shape[0]):
-    #    dist=((point_list-points[i,:])**2).sum(axis=1)    
+    #    dist=((point_list-points[i,:])**2).sum(axis=1)
     #    ndx = d.argsort()
     #    closest_point_indexes[i] = ndx[0]
     if debug:
@@ -237,7 +237,7 @@ def interpN(var,trinodes,aw0,debug=False):
 
     #TR comment: squeeze seems to resolve my problem with pydap
     return varPt.squeeze()
-    
+
 def interpE_at_pt(var, pt_x, pt_y, index, triele,
                   a1u, a2u, debug=False):
     """
@@ -384,6 +384,7 @@ def interpE(var, xc, yc, triele,
     y0 = yc[:]
 
     if len(var.shape)==1:
+        print 'Treating ghost points for 1D...'
         # Treatment of ghost points
         Var = np.hstack((var,0))
         V1 = Var[n1]
@@ -400,8 +401,9 @@ def interpE(var, xc, yc, triele,
                + (a2u[3,:] * V3)
         varPt = var[:] + (dvardx * x0) + (dvardy * y0)
     elif len(var.shape)==2:
+        print 'Treating ghost points for 2D...'
         # Treatment of ghost points
-        Var = np.zeros((var.shape[0], var.shape[1]+1))
+        Var = np.empty((var.shape[0], var.shape[1]+1))
         Var[:,:-1] = var[:]
         V1 = Var[:,n1]
         V2 = Var[:,n2]
@@ -418,7 +420,8 @@ def interpE(var, xc, yc, triele,
         varPt = var[:,:] + (dvardx * x0) + (dvardy * y0)
     else:
         # Treatment of ghost points
-        Var = np.zeros((var.shape[0], var.shape[1], var.shape[2]+1))
+        print 'treating ghost points for 3D...'
+        Var = np.empty((var.shape[0], var.shape[1], var.shape[2]+1))
         Var[:,:,:-1] = var[:]
         V1 = Var[:,:,n1]
         V2 = Var[:,:,n2]
@@ -486,14 +489,14 @@ def interp_at_point(var, pt_lon, pt_lat, lon, lat,
         triVar = np.zeros(triIndex.shape)
         triVar[:] = var[triIndex]
         inter = Tri.LinearTriInterpolator(tri, triVar[:])
-        varInterp = inter(pt_lon, pt_lat)      
+        varInterp = inter(pt_lon, pt_lat)
     elif len(var.shape)==2:
         triVar = np.zeros((var.shape[0], triIndex.shape[0]))
         triVar[:] = var[:, triIndex]
         varInterp = np.ones(triVar.shape[0])
         for i in range(triVar.shape[0]):
             inter = Tri.LinearTriInterpolator(tri, triVar[i,:])
-            varInterp[i] = inter(pt_lon, pt_lat)       
+            varInterp[i] = inter(pt_lon, pt_lat)
     else:
         triVar = np.zeros((var.shape[0], var.shape[1], triIndex.shape[0]))
         triVar[:] = var[:, :, triIndex]
@@ -532,7 +535,7 @@ def interpE_at_point_bis(var, pt_lon, pt_lat, lonc, latc, debug=False):
     points0 = points[:, 0, np.newaxis]
     point_list1 = point_list[:, 1]
     points1 = points[:, 1, np.newaxis]
-    
+
     closest_dist = ((point_list0 - points0) *
                     (point_list0 - points0) +
                     (point_list1 - points1) *
@@ -572,7 +575,7 @@ def interpE_at_point_bis(var, pt_lon, pt_lat, lonc, latc, debug=False):
         z1 = var[:,:,triIndex[0]]
         z2 = var[:,:,triIndex[1]]
         z3 = var[:,:,triIndex[2]]
-    varInterp = z1 + A * (z2 - z1) + B * (z3 - z1) 
+    varInterp = z1 + A * (z2 - z1) + B * (z3 - z1)
     #end new scheme
     if debug:
         print '...Passed'
@@ -582,16 +585,59 @@ def interpE_at_point_bis(var, pt_lon, pt_lat, lonc, latc, debug=False):
 
 def interp_linear_to_nodes(var, xc, yc, x, y):
     """Linear interpolation from elements to nodes"""
-    L = xc.shape[0]
-    M = x.shape[0]
-    orig = np.zeros((L, 2))
-    ask = np.zeros((M, 2))
-    orig[:, 0] = xc
-    orig[:, 1] = yc
-    ask[:, 0] = x
-    ask[:, 1] = y
-    interpol = interpolate.LinearNDInterpolator(orig, var)
+    #L = xc.shape[0]
+    #print L
+    #M = x.shape[0]
+    #print M
+    #orig = np.empty((L, 2))
+    #ask = np.empty((M, 2))
+    #print orig.shape, ask.shape
+    #orig[:, 0] = xc.T
+    #orig[:, 1] = yc.T
+    #ask[:, 0] = x.T
+    #ask[:, 1] = y.T
+    #print orig[0:9]
+    #print ask[0:9]
+
+    orig=np.vstack([xc,yc]).T
+    ask=np.vstack([x,y]).T
+    vals=var.T
+    print vals.shape
+    print orig.shape, ask.shape
+
+    interpol = interpolate.LinearNDInterpolator(orig, vals)
     varinterp = interpol(ask)
     varinterp[np.where(varinterp==np.nan)]=0.0
 
     return  varinterp
+
+def find_nearest_elems(trinodes, nnode):
+    """For a given node, the surrounding element indices are found.
+        Params:
+        - trinodes :: FVCOM trinodes, numpy array, dim=(nele, 3)
+        - nnode :: Total number of nodes, int
+        Returns:
+        - numpy array of arrays (irregular dimensions)
+    """
+    return np.array([np.squeeze(np.where(trinodes[:,:]==node))[0] \
+            for node in xrange(nnode)])
+
+def interp_to_nodes_avg(var, nnode, trinodes, debug=False):
+    """Interpolates to nodes by finding all nearest elements and averaging
+    their values. This is done for all layers and timesteps.
+    KC: This code is slow! Use find_nearest_elems instead, then do averaging.
+    """
+
+    varE2N=np.empty(nnode, dtype=object)
+    var=np.swapaxes(var,0,2)
+    for node in xrange(nnode):
+        x=np.asarray(np.squeeze(np.where(trinodes==node))[0])
+        if debug:
+            print "computing average..."
+        varE2N[node] = np.mean(var[x,:,:], axis=0)
+
+    print 'all done!'
+    return np.squeeze([np.vstack(varE2N[node]) for node in xrange(nnode)])
+
+
+
