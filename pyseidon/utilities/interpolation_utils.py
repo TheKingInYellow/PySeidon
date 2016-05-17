@@ -645,7 +645,8 @@ def interp_to_nodes_avg(var, nnode, trinodes, debug=False):
             print "computing average..."
         varE2N[node] = np.mean(var[x,:,:], axis=0)
 
-    print 'all done!'
+    if debug:
+        print 'all done!'
     return np.squeeze([np.vstack(varE2N[node]) for node in xrange(nnode)])
 
 
