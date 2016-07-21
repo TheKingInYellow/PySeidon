@@ -76,7 +76,7 @@ class PlotsFvcom:
 
 
     def colormap_var(self, var, title=' ', cmin=[], cmax=[], cmap=[], bb = None,
-                     degree=True, mesh=False, isoline = 'bathy',
+                     degree=True, mesh=False, isoline = 'bathy', isostep = None,
                      dump=False, png=False, shapefile=False, kmz=False, debug=False, **kwargs):
         """
         2D xy colormap plot of any given variable and mesh.
@@ -89,12 +89,14 @@ class PlotsFvcom:
           - cmin = minimum limit colorbar
           - cmax = maximum limit colorbar
           - cmap = matplolib colormap
+          - units = string, var's units
           - bb = bounding box, ex.:
                  bb = [minimun longitude, maximun longitude, minimun latitude, maximum latitude]
                  bb = [minimun x, maximun x, minimun y, maximum y]
           - mesh = True, with mesh; False, without mesh
           - degree = boolean, coordinates in degrees (True) or meters (False)
-          - isloline = 'bathy': bathymetric isolines, 'var': variable isolines, 'none': no isolines
+          - isoline = 'bathy': bathymetric isolines, 'var': variable isolines, 'none': no isolines
+          - isostep = increment between isolines, float
           - dump = boolean, dump profile data in csv file
           - png = boolean, save map as png
           - shapefile = boolean, save map as shapefile
@@ -165,7 +167,6 @@ class PlotsFvcom:
                 print "Computing cmax..."
             cmax=var[:].max()
         step = (cmax-cmin) / 50.0
-        levels=np.arange(cmin, (cmax+step), step)   # depth contours to plot
 
         #Figure window params
         self._def_fig()
@@ -179,9 +180,8 @@ class PlotsFvcom:
         if debug:
             print "Computing colormap..."
         if cmap==[]:
-            f = self._ax.tripcolor(tri, var[:],vmax=cmax,vmin=cmin,cmap=plt.cm.gist_earth)
-        else:
-            f = self._ax.tripcolor(tri, var[:],vmax=cmax,vmin=cmin,cmap=cmap) 
+            cmap = plt.cm.gist_earth
+        f = self._ax.tripcolor(tri, var[:],vmax=cmax,vmin=cmin,cmap=cmap)
         if mesh:
             plt.triplot(tri, color='white', linewidth=0.5)
 
@@ -193,8 +193,10 @@ class PlotsFvcom:
             self._ax.set_ylabel('Distance (m)')
             self._ax.set_xlabel('Distance (m)')
         self._ax.patch.set_facecolor('0.5')
+        self._ax.set_title(title)
+        units = kwargs.pop('units', '-')
         cbar=self._fig.colorbar(f, ax=self._ax)
-        cbar.set_label(title, rotation=-90,labelpad=30)
+        cbar.set_label(units, rotation=-90,labelpad=30)
         scale = 1
 
         if degree:
@@ -206,19 +208,28 @@ class PlotsFvcom:
         self._ax.set_ylim([bb[2],bb[3]])
 
         # Isolines
-        if isoline == 'bathy':
-            cs = self._ax.tricontour(tri, self._grid.h, colors='w', linewidths=1.0)
-            plt.clabel(cs, fontsize=11, inline=1)
-            plt.figtext(.12, .95, "Notes: white lines = bathymetric isolines", size='x-small')
-        elif isoline == 'var':
-            if var.shape[0] == self._grid.nele:
-                vari = interp_linear_to_nodes(var, self._grid.xc, self._grid.yc, self._grid.x, self._grid.y)
-            else:
-                vari = var
-            bounds=np.linspace(cmin,cmax,11)
-            cs = self._ax.tricontour(tri, vari[:], vmin=cmin, vmax=cmax, colors='w', linewidths=1.0, levels=bounds)
-            plt.clabel(cs, fontsize=11, inline=1)
-            plt.figtext(.12, .95, "Notes: white lines = isolines", size='x-small')
+        if not isoline == 'none':
+            if isoline == 'bathy':
+                if not isostep == None:
+                    levels = list(np.arange(round(self._grid.h.min()), round(self._grid.h.max()), isostep))
+                    cs = self._ax.tricontour(tri, self._grid.h, colors='w', linewidths=1.0, levels=levels)
+                else:
+                    cs = self._ax.tricontour(tri, self._grid.h, colors='w', linewidths=1.0)
+                plt.clabel(cs, fontsize=11, inline=1)
+                plt.figtext(.12, .95, "Notes: white lines = bathymetric isolines", size='x-small')
+            elif isoline == 'var':
+                if var.shape[0] == self._grid.nele:
+                    vari = interp_linear_to_nodes(var, self._grid.xc, self._grid.yc, self._grid.x, self._grid.y)
+                else:
+                    vari = var
+                bounds=np.linspace(cmin,cmax,11)
+                if not isostep == None:
+                    levels = list(np.arange(cmin, cmax, isostep))
+                    cs = self._ax.tricontour(tri, vari[:], vmin=cmin, vmax=cmax, colors='w', linewidths=1.0, levels=levels)
+                else:
+                    cs = self._ax.tricontour(tri, vari[:], vmin=cmin, vmax=cmax, colors='w', linewidths=1.0, levels=bounds)
+                plt.clabel(cs, fontsize=11, inline=1)
+                plt.figtext(.12, .95, "Notes: white lines = isolines", size='x-small')
 
         # Show plot
         self._ax.grid()
@@ -233,8 +244,8 @@ class PlotsFvcom:
         title = title.replace(".", "_")
         savename=title.lower()
         if png:
-            if kmz:
-                self._fig.savefig("overlay.png", bbox_inches='tight', transparent=True)
+            #if kmz:
+            #    self._fig.savefig("overlay.png", bbox_inches='tight', transparent=True)
             self._fig.savefig(savename+".png", bbox_inches='tight')
 
         if dump:
@@ -299,16 +310,29 @@ class PlotsFvcom:
             fig = plt.figure(figsize=figsize, facecolor=None, frameon=False, dpi=pixels // 5)
             # fig = figure(facecolor=None, frameon=False, dpi=pixels//10)
             ax = fig.add_axes([0, 0, 1, 1])
-            if cmap == []:
-                pc = ax.tripcolor(tri, var[:], vmax=cmax, vmin=cmin, cmap=plt.cm.gist_earth)
-            else:
-                pc = ax.tripcolor(tri, var[:], vmax=cmax, vmin=cmin, cmap=cmap)
-            #ax.set_xlim(xmin, xmax)
-            #ax.set_ylim(ymin, ymax)
+            pc = ax.tripcolor(tri, var[:], vmax=cmax, vmin=cmin, cmap=cmap)
+
+            # Isolines
+            if not isoline == 'none':
+                if isoline == 'bathy':
+                    if not isostep == None:
+                        levels = list(np.arange(round(self._grid.h.min()), round(self._grid.h.max()), isostep))
+                        cs = ax.tricontour(tri, self._grid.h, colors='w', linewidths=1.0, levels=levels)
+                    else:
+                        cs = ax.tricontour(tri, self._grid.h, colors='w', linewidths=1.0)
+                    units += " & bathymetric isolines"
+                elif isoline == 'var':
+                    if not isostep == None:
+                        levels = list(np.arange(cmin, cmax, isostep))
+                        cs = ax.tricontour(tri, vari[:], vmin=cmin, vmax=cmax, colors='w', linewidths=1.0, levels=levels)
+                    else:
+                        cs = ax.tricontour(tri, vari[:], vmin=cmin, vmax=cmax, colors='w', linewidths=1.0, levels=bounds)
+                plt.clabel(cs, fontsize=11, inline=1)
+
             ax.set_xlim([bb[0], bb[1]])
             ax.set_ylim([bb[2], bb[3]])
             ax.set_axis_off()
-            plt.savefig('overlay.png', dpi=200, transparent=True)
+            fig.savefig('overlay.png', dpi=200, transparent=True)
 
             # Write kmz
             fz = zipfile.ZipFile(kmzfile, 'w')
@@ -326,11 +350,11 @@ class PlotsFvcom:
             fig = plt.figure(figsize=(1.0, 4.0), facecolor=None, frameon=False)
             ax = fig.add_axes([0.0, 0.05, 0.2, 0.9])
             cb = fig.colorbar(pc, cax=ax)
-            cb.set_label(units, color='0.9')
+            cb.set_label(units, color='0.0')
             for lab in cb.ax.get_yticklabels():
-                plt.setp(lab, 'color', '0.9')
+                plt.setp(lab, 'color', '0.0')
 
-            plt.savefig('legend.png', transparent=True)
+            fig.savefig('legend.png', transparent=True)
             fz.write('legend.png')
             os.remove('legend.png')
             fz.close()
@@ -619,7 +643,7 @@ class PlotsFvcom:
         lyr = shapeData.CreateLayer("poly_layer", spatialRefi, ogr.wkbPolygon)
 
         #Features
-        if varLabel==' ': valLabel = 'var'
+        if varLabel==' ': varLabel = 'var'
         lyr.CreateField(ogr.FieldDefn(varLabel, ogr.OFTReal))
 
         if debug: print "Writing ESRI Shapefile %s..." % filename
@@ -645,7 +669,7 @@ class PlotsFvcom:
             #Now add field values from array
             feat = ogr.Feature(lyr.GetLayerDefn())
             feat.SetGeometry(poly)
-            feat.SetField(varLabel, var[cnt])
+            feat.SetField(varLabel, float(var[cnt]))
 
             lyr.CreateFeature(feat)
             feat.Destroy()

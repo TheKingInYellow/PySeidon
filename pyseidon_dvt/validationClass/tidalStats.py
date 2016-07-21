@@ -15,6 +15,9 @@ from sys import exit
 # local imports
 from pyseidon_dvt.utilities.BP_tools import principal_axis
 
+# Custom error
+from pyseidon_dvt.utilities.pyseidon_error import PyseidonError
+
 class TidalStats:
     """
     An object representing a set of statistics on tidal heights used
@@ -33,7 +36,7 @@ class TidalStats:
     """
     def __init__(self, gear, model_data, observed_data, time_step, start_time,
                  model_u = [], observed_u = [], model_v= [], observed_v = [],
-                 model_time = [], observed_time = [],
+                 model_time = [], observed_time = [], phase_shift=False,
                  kind='', debug=False, debug_plot=False):
         if debug: print "TidalStats initialisation..."
         self._debug = debug
@@ -52,16 +55,21 @@ class TidalStats:
         self.observed_v = np.asarray(observed_v)
         self.observed_v = self.observed_v.astype(np.float64)
         self.kind = kind
+        self.step = time_step
+        self.length = model_data.size
 
         # TR: pass this step if dealing with Drifter's data
         if not self.gear == 'Drifter':
-            # TR: fix for interpolation pb when 0 index or -1 index array values = nan
-            if debug: print "...trim nans at start and end of data.."
-            start_index, end_index = 0, -1
-            while np.isnan(self.observed[start_index]) or np.isnan(self.model[start_index]):
-                start_index += 1
-            while np.isnan(self.observed[end_index]) or np.isnan(self.model[end_index]):
-                end_index -= 1
+            try:
+                # TR: fix for interpolation pb when 0 index or -1 index array values = nan
+                if debug: print "...trim nans at start and end of data.."
+                start_index, end_index = 0, -1
+                while np.isnan(self.observed[start_index]) or np.isnan(self.model[start_index]):
+                    start_index += 1
+                while np.isnan(self.observed[end_index]) or np.isnan(self.model[end_index]):
+                    end_index -= 1
+            except IndexError:  # due too nans everywhere, itself due to no obs data at requested depth
+                raise  PyseidonError("-No matching measurement-")
 
             # Correction for bound index call
             if end_index == -1:
@@ -79,7 +87,6 @@ class TidalStats:
         
             # set up array of datetimes corresponding to the data (and timestamps)
             self.times = start_time + np.arange(self.model.size) * time_step
-            self.step = time_step
             timestamps = np.zeros(len(self.times))
             for j, jj in enumerate(self.times):
                 timestamps[j] = time.mktime(jj.timetuple())
@@ -97,18 +104,56 @@ class TidalStats:
                 func = interp1d(time_nonan, mod_nonan)
                 self.model = func(timestamps)
 
-
         # TR: pass this step if dealing with Drifter's data
         else:
-            self.step = time_step # needed for getMDPO, getMDNO, getPhase & altPhase
             self.times = start_time + np.arange(self.model.size) * time_step # needed for plots, en seconds
             #TR: those are not the real times though
+
+        # Applying phase shift correction if needed
+        if phase_shift:
+            if debug: print "...applying phase shift..."
+            try:  # Fix for Drifter's data
+                step_sec = time_step.seconds
+            except AttributeError:
+                step_sec = time_step * 24.0 * 60.0 * 60.0  # converts matlabtime to seconds
+            phase = self.getPhase()
+            phaseIndex = int(phase * 60.0 / step_sec)
+            if debug: print "Phase index = "+str(phaseIndex)
+            # create shifted data)
+            # if (phaseIndex < 0):
+            #     # left shift
+            #     iM = np.s_[-phaseIndex:]
+            #     iO = np.s_[:self.length + phaseIndex]
+            # elif (phaseIndex > 0):
+            #     # right shift
+            #     iM = np.s_[:self.length - phaseIndex]
+            #     iO = np.s_[phaseIndex:]
+            # else:  # if (phaseIndex == 0):
+            #     # no shift
+            #     iM = np.s_[:]
+            #     iO = np.s_[:]
+            # self.model = self.model[iM]
+            # self.observed = self.observed[iO]
+            # if not model_u == []:
+            #     self.model_u = self.model_u[iM]
+            # if not model_v == []:
+            #     self.model_v = self.model_v[iM]
+            # if not observed_u == []:
+            #     self.observed_u = self.observed_v[iO]
+            # if not observed_v == []:
+            #     self.observed_v = self.observed_v[iO]
+            self.model = np.roll(self.model, phaseIndex)
+            if not model_u == []:
+                self.model_u = np.roll(self.model_u, phaseIndex)
+            if not model_v == []:
+                self.model_v = np.roll(self.model_v, phaseIndex)
+        if debug: print "...TidalStats initialisation done."
 
         # Error attributes
         if self.kind in ['cubic speed', 'velocity', 'direction']:
             # TR: pass this step if dealing with Drifter's data
             if not self.gear == 'Drifter':
-            # interpolate cubic speed, u and v on same time steps
+                # interpolate cubic speed, u and v on same time steps
                 model_timestamps = np.zeros(len(model_time))
                 for j, jj in enumerate(model_time):
                     model_timestamps[j] = time.mktime(jj.timetuple())
@@ -136,7 +181,6 @@ class TidalStats:
         else:
             print "---Data kind not supported---"
             exit()
-        self.length = self.error.size
 
         # if debug: print "...establish limits as defined by NOAA standard..."
         # if self.kind == 'velocity':
@@ -158,8 +202,6 @@ class TidalStats:
         obs_range = 0.1 * (np.nanmax(self.observed) - np.nanmin(self.observed))
         mod_range = 0.1 * (np.nanmax(self.model) - np.nanmin(self.model))
         self.ERROR_BOUND = (obs_range + mod_range) / 2.
-
-        if debug: print "...TidalStats initialisation done."
 
         return
 
@@ -466,30 +508,31 @@ class TidalStats:
 
         if debug or self._debug: print "...iterate through the phase shifts and check RMSE..."
         errors = []
-        phases = np.arange(-num_steps, num_steps)
+        phases = np.arange(-num_steps, num_steps).astype(int)
         for i in phases:
             # create shifted data
-            if (i < 0):
-                # left shift
-                shift_mod = self.model[-i:]
-                shift_obs = self.observed[:self.length + i]
-            if (i > 0):
-                # right shift
-                shift_mod = self.model[:self.length - i]
-                shift_obs = self.observed[i:]
-            if (i == 0):
-                # no shift
-                shift_mod = self.model
-                shift_obs = self.observed
+            shift_mod = np.roll(self.model, i)
+            # if (i < 0):
+            #     # left shift
+            #     #shift_mod = self.model[-i:]
+            #     shift_obs = self.observed[:self.length + i]
+            # if (i > 0):
+            #     # right shift
+            #     shift_mod = self.model[:self.length - i]
+            #     shift_obs = self.observed[i:]
+            # if (i == 0):
+            #     # no shift
+            #     shift_mod = self.model
+            #     shift_obs = self.observed
 
             start = self.times[abs(i)]
             step = self.times[1] - self.times[0]
 
             # create TidalStats class for shifted data and get the RMSE
-            stats = TidalStats(self.gear, shift_mod, shift_obs, step, start, kind='Phase')
-
-            rms_error = stats.getRMSE()
-            errors.append(rms_error)
+            #stats = TidalStats(self.gear, shift_mod, shift_obs, step, start, kind='Phase')
+            stats = TidalStats(self.gear, shift_mod, self.observed, step, start, kind='Phase')
+            nrms_error = stats.getNRMSE()
+            errors.append(nrms_error)
 
         if debug or self._debug: print "...find the minimum rmse, and thus the minimum phase..."
         min_index = errors.index(min(errors))
@@ -527,7 +570,7 @@ class TidalStats:
 
         return lag
 
-    def getStats(self, debug=False):
+    def getStats(self, phase_shift=False, debug=False):
         """
         Returns each of the statistics in a dictionary.
         """
@@ -542,11 +585,11 @@ class TidalStats:
         stats['MDPO'] = self.getMDPO()
         stats['MDNO'] = self.getMDNO()
         stats['skill'] = self.getWillmott()
-        #try: #Fix for Drifter's data
-        #    stats['phase'] = self.getPhase(debug=debug)
-        #except:
-        stats['phase'] = 0.0
-        stats['phase'] = self.getPhase()
+        if not phase_shift:
+            stats['phase'] = self.getPhase(debug=debug)
+        else:
+            stats['phase'] = 0.0
+        #stats['phase'] = self.getPhase()
         stats['CORR'] = self.getCORR()
         stats['NRMSE'] = self.getNRMSE()
         stats['NSE'] = self.getNSE()

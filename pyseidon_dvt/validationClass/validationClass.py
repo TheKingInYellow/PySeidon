@@ -22,6 +22,8 @@ from pyseidon_dvt.utilities.interpolation_utils import *
 # Local import
 from plotsValidation import taylorDiagram, benchmarksMap
 from valReport import write_report
+from pyseidon_dvt.utilities.miscellaneous import mattime_to_datetime
+
 # Custom error
 from pyseidon_dvt.utilities.pyseidon_error import PyseidonError
 
@@ -40,8 +42,8 @@ class Validation:
                   |_Save_as = "save as" function
 
     Inputs:
-      - observed = standalone or tuple of PySeidon measurement object (i.e. ADCP, TideGauge, Drifter,...)
-      - simulated = any PySeidon simulation object (i.e. FVCOM or Station)
+      - observed = standalone or list of PySeidon measurement object (i.e. ADCP, TideGauge, Drifter,...)
+      - simulated = standalone or list of any PySeidon simulation object (i.e. FVCOM or Station)
     Option:
       - flow = impose flow comparison by surface flow ('sf'), depth-averaged flow ('daf') or at any depth (float)
                , if negative = from sea surface downwards, if positive = from sea bottom upwards
@@ -55,9 +57,13 @@ class Validation:
         self._fig = None
         self._ax = None
         if type(observed) in [tuple, list]:
-            self._multi = True
+            self._multi_meas = True
         else:
-            self._multi = False
+            self._multi_meas = False
+        if type(simulated) in [tuple, list]:
+            self._multi_sim = True
+        else:
+            self._multi_sim = False
         self._debug_plot = debug_plot
         if debug: print '-Debug mode on-'
         self._nn=nn
@@ -73,17 +79,36 @@ class Validation:
                 self._outpath = self._outpath[:-1] + '_bis/'
 
         #Metadata
-        if not self._multi:
+        if not self._multi_sim:
+            sim_origin = simulated._origin_file
+        else:
+            sim_origin = 'multiple simulation objects'
+        if not self._multi_meas:
             self.History = ['Created from ' + observed._origin_file +\
-                            ' and ' + simulated._origin_file]
+                            ' and ' + sim_origin]
         else:
             self.History = ['Created from multiple measurement sources' +\
-                            ' and ' + simulated._origin_file]
-        self._observed = observed
-        self._simulated = simulated
-        if not self._multi:
+                            ' and ' + sim_origin]
+        if (not self._multi_meas) and (not self._multi_sim):
+            self._observed = observed
+            self._simulated = simulated
             self.Variables = _load_validation(self._outpath, self._observed, self._simulated, flow=self._flow, nn=self._nn, debug=self._debug)
             self._coordinates.append([np.mean(self.Variables.obs.lon), np.mean(self.Variables.obs.lat), self.Variables._obstype])
+
+            # -Append message to History field
+            start = mattime_to_datetime(self.Variables.obs.matlabTime[self.Variables._c[0]])
+            end = mattime_to_datetime(self.Variables.obs.matlabTime[self.Variables._c[-1]])
+            text = 'Temporal domain from ' + str(start) + ' to ' + str(end)
+            self.History.append(text)
+        elif (self._multi_meas) and (not self._multi_sim):
+            self._observed = observed
+            self._simulated = [simulated]
+        elif (not self._multi_meas) and (self._multi_sim):
+            self._observed = [observed]
+            self._simulated = simulated
+        else:
+            self._observed = observed
+            self._simulated = simulated
 
         # Creates folder once compatibility test passed
         if not self._outpath == './':
@@ -91,7 +116,8 @@ class Validation:
             if debug: print '-Saving results to {}-'.format(self._outpath)
         return
 
-    def _validate_data(self, filename=[], depth=[], slack_velo=0.1,  plot=False,  save_csv=False, debug=False, debug_plot=False):
+    def _validate_data(self, filename=[], depth=[], slack_velo=0.1,  plot=False,  save_csv=False, phase_shift=False,
+                       debug=False, debug_plot=False):
         """
         This method computes series of standard validation benchmarks.
 
@@ -101,7 +127,9 @@ class Validation:
                    Only applicable for 3D simulations.
           - slack_velo = slack water's velocity (m/s), float, everything below will be dumped out
           - plot = plot series of validation graphs, boolean.
-          - flow = flow comparison by surface flow ('sf'), depth-averaged flow ('daf') or at any depth (float)
+                       as well as associated plots in specific folder
+          - phase_shift = applies phase shift correction to model quantities
+
 
         *References*
           - NOAA. NOS standards for evaluating operational nowcast and
@@ -140,7 +168,7 @@ class Validation:
         if self.Variables.struct['type'] == 'ADCP':
             suites = compareOBS(self.Variables.struct, self.Variables._save_path, threeD,
                                     plot=plot, depth=depth, slack_velo=slack_velo, save_csv=save_csv,
-                                    debug=debug, debug_plot=debug_plot)
+                                    phase_shift=phase_shift, debug=debug, debug_plot=debug_plot)
 
             for key in suites:
                 self.Suites[key] = suites[key]
@@ -149,7 +177,7 @@ class Validation:
         elif self.Variables.struct['type'] == 'TideGauge':
             suites = compareOBS(self.Variables.struct, self.Variables._save_path,
                                       plot=plot, slack_velo=slack_velo, save_csv=save_csv,
-                                      debug=debug, debug_plot=debug_plot)
+                                      phase_shift=phase_shift, debug=debug, debug_plot=debug_plot)
             for key in suites:
                 self.Suites[key] = suites[key]
                 vars.append(key)
@@ -157,7 +185,7 @@ class Validation:
         elif self.Variables.struct['type'] == 'Drifter':
             suites = compareOBS(self.Variables.struct, self.Variables._save_path, self.Variables._3D,
                                     depth=depth, plot=plot, slack_velo=slack_velo, save_csv=save_csv,
-                                    debug=debug, debug_plot=debug_plot)
+                                    phase_shift=phase_shift, debug=debug, debug_plot=debug_plot)
 
             for key in suites:
                 self.Suites[key] = suites[key]
@@ -379,7 +407,8 @@ class Validation:
             # save dataframe in attribute
             self._HarmonicBenchmarks.velocity = table
 
-    def validate_data(self, filename=[], depth=[], slack_velo=0.1, plot=False, save_csv=False, debug=False, debug_plot=False):
+    def validate_data(self, filename=[], depth=[], slack_velo=0.1, plot=False, save_csv=False, phase_shift=False,
+                      debug=False, debug_plot=False):
         """
         This method computes series of standard validation benchmarks.
 
@@ -391,7 +420,8 @@ class Validation:
           - slack_velo = slack water's velocity (m/s), float, everything below will be dumped out
           - plot = plot series of validation graphs, boolean.
           - save_csv = will save benchmark values into *.csv file
-                       as well as associated plots in specific folderssta
+                       as well as associated plots in specific folder
+          - phase_shift = applies phase shift correction to model quantities
 
         *References*
           - NOAA. NOS standards for evaluating operational nowcast and
@@ -408,25 +438,41 @@ class Validation:
             N. S. Banas (2009), Evaluation of a coastal ocean circulation model for
             the Columbia River plume in summer 2004, J. Geophys. Res., 114
         """
-        if not self._multi:
-            self._validate_data(filename, depth, slack_velo, plot, save_csv, debug, debug_plot)
+        if (not self._multi_meas) and (not self._multi_sim):
+            self._validate_data(filename, depth, slack_velo, plot, save_csv, phase_shift, debug, debug_plot)
             self.Benchmarks = self._Benchmarks
         else:
             I=0
-            for meas in self._observed:
-                try:
-                    self.Variables = _load_validation(self._outpath, meas, self._simulated, flow=self._flow, debug=self._debug)
-                    self._coordinates.append([np.mean(self.Variables.obs.lon), np.mean(self.Variables.obs.lat), self.Variables._obstype])
-                    self._validate_data(filename, depth, slack_velo, plot, save_csv, debug, debug_plot)
-                    if I == 0:
-                        self.Benchmarks = self._Benchmarks
-                        I += 1
-                    else:
-                        self.Benchmarks = pd.concat([self.Benchmarks, self._Benchmarks])
-                except PyseidonError:
-                    pass
+            for sim in self._simulated:
+                for meas in self._observed:
+                    try:
+                        self.Variables = _load_validation(self._outpath, meas, sim, flow=self._flow, debug=self._debug)
+
+                        # -Append message to History field
+                        start = mattime_to_datetime(self.Variables.obs.matlabTime[self.Variables._c[0]])
+                        end = mattime_to_datetime(self.Variables.obs.matlabTime[self.Variables._c[-1]])
+                        text = 'Temporal domain from ' + str(start) + ' to ' + str(end)
+                        try:
+                            self.History[1] = text
+                        except IndexError:
+                            self.History.append(text)
+
+                        self._validate_data(filename, depth, slack_velo, plot, save_csv, phase_shift, debug, debug_plot)
+                        if I == 0:
+                            self.Benchmarks = self._Benchmarks
+                            I += 1
+                        else:
+                            self.Benchmarks = pd.concat([self.Benchmarks, self._Benchmarks])
+
+                        self._coordinates.append([np.mean(self.Variables.obs.lon),
+                                                  np.mean(self.Variables.obs.lat),
+                                                  self.Variables._obstype])
+                    except PyseidonError:
+                    #except:  # making it even more permissive
+                        print "Error with measurement object "+meas.History[0]
+                        continue
         if save_csv:
-            #if self._multi:
+            #if self._multi_meas:
             #    savepath = self.Variables._save_path[:(self.Variables._save_path[:-1].rfind('/')+1)]
             #else:
             #    savepath = self.Variables._save_path
@@ -448,44 +494,45 @@ class Validation:
           save_csv: will save both observed and modeled harmonic
                     coefficients into *.csv files (i.e. *_harmo_coef.csv)
         """
-        if not self._multi:
+        if (not self._multi_meas) and (not self._multi_sim):
             self.Variables = _load_validation(self._outpath, self._observed, self._simulated, flow=self._flow, debug=self._debug)
             self._validate_harmonics(filename, save_csv, debug, debug_plot)
             self.HarmonicBenchmarks = self._HarmonicBenchmarks
         else:
             I=0
             J=0
-            for meas in self._observed:
-                try:
-                    self.Variables = _load_validation(self._outpath, meas, self._simulated, flow=self._flow, debug=self._debug)
-                    self._validate_harmonics(filename, save_csv, debug, debug_plot)
-                    if I == 0 and J == 0:
-                        self.HarmonicBenchmarks = HarmonicBenchmarks()
-                    if I == 0 and type(self._HarmonicBenchmarks.elevation) != str:
-                        self.HarmonicBenchmarks.elevation = self._HarmonicBenchmarks.elevation
-                        I += 1
-                    elif I != 0 and type(self._HarmonicBenchmarks.elevation) != str:
-                        self.HarmonicBenchmarks.elevation = pd.concat([self.HarmonicBenchmarks.elevation,
-                                                                       self._HarmonicBenchmarks.elevation])
-                    if J == 0 and type(self._HarmonicBenchmarks.velocity) != str:
-                        self.HarmonicBenchmarks.velocity = self._HarmonicBenchmarks.velocity
-                        J += 1
-                    elif J != 0 and type(self._HarmonicBenchmarks.velocity) != str:
-                        self.HarmonicBenchmarks.velocity = pd.concat([self.HarmonicBenchmarks.velocity,
-                                                                      self._HarmonicBenchmarks.velocity])
-                except PyseidonError:
-                    pass
+            for sim in self._simulated:
+                for meas in self._observed:
+                    try:
+                        self.Variables = _load_validation(self._outpath, meas, sim, flow=self._flow, debug=self._debug)
+                        self._validate_harmonics(filename, save_csv, debug, debug_plot)
+                        if I == 0 and J == 0:
+                            self.HarmonicBenchmarks = HarmonicBenchmarks()
+                        if I == 0 and type(self._HarmonicBenchmarks.elevation) != str:
+                            self.HarmonicBenchmarks.elevation = self._HarmonicBenchmarks.elevation
+                            I += 1
+                        elif I != 0 and type(self._HarmonicBenchmarks.elevation) != str:
+                            self.HarmonicBenchmarks.elevation = pd.concat([self.HarmonicBenchmarks.elevation,
+                                                                           self._HarmonicBenchmarks.elevation])
+                        if J == 0 and type(self._HarmonicBenchmarks.velocity) != str:
+                            self.HarmonicBenchmarks.velocity = self._HarmonicBenchmarks.velocity
+                            J += 1
+                        elif J != 0 and type(self._HarmonicBenchmarks.velocity) != str:
+                            self.HarmonicBenchmarks.velocity = pd.concat([self.HarmonicBenchmarks.velocity,
+                                                                          self._HarmonicBenchmarks.velocity])
+                    except PyseidonError:
+                        pass
 
         # Drop duplicated lines
         self.HarmonicBenchmarks.velocity.drop_duplicates(inplace=True)
         self.HarmonicBenchmarks.elevation.drop_duplicates(inplace=True)
 
         if save_csv:
-            if self._multi:
-                savepath = self.Variables._save_path[:(self.Variables._save_path[:-1].rfind('/')+1)]
-            else:
-                savepath = self.Variables._save_path
-            savepath = self.Variables._save_path
+            #if self._multi_meas:
+            #    savepath = self.Variables._save_path[:(self.Variables._save_path[:-1].rfind('/')+1)]
+            #else:
+            #    savepath = self.Variables._save_path
+            savepath = self._outpath
             try:
                 try:
                     out_file = '{}{}_elevation_harmonic_benchmarks.csv'.format(savepath, filename)
@@ -500,16 +547,18 @@ class Validation:
             except AttributeError:
                 raise PyseidonError("-No matching measurement-")
 
-    def taylor_diagram(self, savepath='', fname="taylor_diagram", debug=False):
+    def taylor_diagram(self, savepath='', fname="taylor_diagram", labels=True, debug=False):
         """
         Plots Taylor diagram based on the results of 'validate_data'
 
         Options:
           - savepath = folder path for saving plot, string
           - fname = filename for saving plot, string
+          - labels = labels and legend, boolean
         """
         try:
-            self._fig, self._ax = taylorDiagram(self.Benchmarks, savepath=savepath, fname=fname, debug=debug)
+            self._fig, self._ax = taylorDiagram(self.Benchmarks,
+                                                savepath=savepath, fname=fname, labels=labels, debug=debug)
         except AttributeError:
             raise PyseidonError("-validate_data needs to be run first-")
 

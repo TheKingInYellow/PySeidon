@@ -86,7 +86,7 @@ def write_report(valClass, report_title="validation_report.pdf", debug=False):
                            statistics mostly adhere to the benchmarks defined as standards for \
                            hydrodynamic model validation by NOAA [1]. Additional statistics have been \
                            added to provide additional clarity on the skill of the model [2, 3, 4]."
-                           , styles['BodyText']))
+                           , styles['Justify']))  # , styles['BodyText']))
     story.append(Paragraph("The present validation set is performed the following variables:"
                            , styles['BodyText']))
     if benchflag:
@@ -189,9 +189,10 @@ def write_report(valClass, report_title="validation_report.pdf", debug=False):
     story.append(NextPageTemplate('OneCol'))
     story.append(PageBreak())
     story.append(Paragraph("Results", styles['Heading1']))
+    story.append(Paragraph("The simulated and measured data sets, used in this document to generate the validation \
+                            benchmarks, cover a " + valClass.History[1].lower() + ".", styles['Justify']))  # , styles['BodyText']))
     story.append(Paragraph("The following map displays the location(s) as well as the type(s) of the measurement(s)  \
-                           used in this validation report.",
-                           styles['BodyText']))
+                           used in this validation report.", styles['Justify']))  # , styles['BodyText']))
     story.append(Spacer(1, 12))
     # Map: measurement's locations
     imNb += 1
@@ -209,31 +210,41 @@ def write_report(valClass, report_title="validation_report.pdf", debug=False):
         if lat < latmin: latmin = lat
     #  redefine colorbar min/max
     margin = 0.01
+    if valClass._multi_sim:
+        for sim in valClass._simulated:
+            try:
+                if 'fvcom' in sim.__module__:
+                    fvcom = sim
+                    break
+            except AttributeError:
+                continue
+    else:
+        fvcom = valClass._simulated
     indices = np.where(np.logical_and(
-                       np.logical_and(valClass._simulated.Grid.lon[:] < lonmax + margin,
-                                      valClass._simulated.Grid.lon[:] > lonmin - margin),
-                       np.logical_and(valClass._simulated.Grid.lat[:] < latmax + margin,
-                                      valClass._simulated.Grid.lat[:] > latmin - margin)))[0]
-    cmax = valClass._simulated.Grid.h[indices].max()
-    cmin = valClass._simulated.Grid.h[indices].min()
-    valClass._simulated.Plots.colormap_var(valClass._simulated.Grid.h,
+                       np.logical_and(fvcom.Grid.lon[:] < lonmax + margin,
+                                      fvcom.Grid.lon[:] > lonmin - margin),
+                       np.logical_and(fvcom.Grid.lat[:] < latmax + margin,
+                                      fvcom.Grid.lat[:] > latmin - margin)))[0]
+    cmax = fvcom.Grid.h[indices].max()
+    cmin = fvcom.Grid.h[indices].min()
+    fvcom.Plots.colormap_var(fvcom.Grid.h,
                                            title='Bathymetric Map & Measurement location(s)',
                                            cmax=cmax, cmin=cmin, isoline='var', mesh=False)
     #  redefine frame
-    valClass._simulated.Plots._ax.set_xlim([lonmin - margin, lonmax + margin])
-    valClass._simulated.Plots._ax.set_ylim([latmin - margin, latmax + margin])
+    fvcom.Plots._ax.set_xlim([lonmin - margin, lonmax + margin])
+    fvcom.Plots._ax.set_ylim([latmin - margin, latmax + margin])
     color = cmap.rainbow(np.linspace(0, 1, len(valClass._coordinates)))
     for ii, coor in enumerate(valClass._coordinates):
         lon = coor[0]
         lat = coor[1]
         name = coor[2]
         txt = str(ii)
-        valClass._simulated.Plots._ax.scatter(lon, lat, label=name,
+        fvcom.Plots._ax.scatter(lon, lat, label=name,
                                               lw=2, s=50, color=color[ii])
-        # valClass._simulated.Plots._ax.annotate(txt, (lon, lat), size=20)
-    valClass._simulated.Plots._ax.legend()
-    valClass._simulated.Plots._fig.savefig(savename, format='png', bbox_inches='tight')
-    valClass._simulated.Plots._fig.clear()
+        # fvcom.Plots._ax.annotate(txt, (lon, lat), size=20)
+    fvcom.Plots._ax.legend()
+    fvcom.Plots._fig.savefig(savename, format='png', bbox_inches='tight')
+    fvcom.Plots._fig.clear()
     # image = Image(savename, width=doc.width, height=doc.height / 1.5)
     # story.append(image)
     story.append(get_image(savename, width=16*cm))
@@ -247,9 +258,6 @@ def write_report(valClass, report_title="validation_report.pdf", debug=False):
           ('FONT', (0,0), (-1,0), 'Times-Bold')]
 
     if benchflag:
-        story.append(NextPageTemplate('landscape'))
-        story.append(PageBreak())
-        story.append(Paragraph("Validation Benchmarks", styles['Heading2']))
         df = valClass.Benchmarks
         values = df.values.tolist()
         # clean up
@@ -257,11 +265,29 @@ def write_report(valClass, report_title="validation_report.pdf", debug=False):
             for jj, e in enumerate(l):
                 if type(e) == float:
                     values[ii][jj] = float(Decimal("%.2f" % e))
-        lista = [df.columns[:,].values.astype(str).tolist()] + values
-        table = Table(lista, style=ts)
-        story.append(table)
-        pgtemp.append(PageTemplate(id='landscape', frames=frameL, onPage=make_landscape))
-
+        # Adding id. numbers
+        for ii in range(len(values)):
+            values[ii] = [str(ii + 1)] + values[ii]
+        lista = [['Id.'] + df.columns[:,].values.astype(str).tolist()] + values
+        nb_pages = -(-len(lista)/20)
+        if nb_pages == 1:
+            story.append(NextPageTemplate('landscape'))
+            story.append(PageBreak())
+            story.append(Paragraph("Validation Benchmarks", styles['Heading2']))
+            table = Table(lista, style=ts) # , repeatRows=1, rowSplitRange=20)
+            story.append(table)
+            pgtemp.append(PageTemplate(id='landscape', frames=frameL, onPage=make_landscape))
+        else:
+            for i in range(nb_pages):
+                story.append(NextPageTemplate('landscape'))
+                story.append(PageBreak())
+                if i == 0:
+                    story.append(Paragraph("Validation Benchmarks", styles['Heading2']))
+                    table = Table(lista[i*20:(i+1)*20], style=ts) # , repeatRows=1, rowSplitRange=20)
+                else:
+                    table = Table([lista[0]]+lista[(i*20)+1:(i+1)*20], style=ts) # , repeatRows=1, rowSplitRange=20)
+                story.append(table)
+                pgtemp.append(PageTemplate(id='landscape', frames=frameL, onPage=make_landscape))
     if harmoflag:
         story.append(NextPageTemplate('OneCol'))
         story.append(PageBreak())
@@ -274,7 +300,10 @@ def write_report(valClass, report_title="validation_report.pdf", debug=False):
                 for jj, e in enumerate(l):
                     if type(e) == float:
                         values[ii][jj] = float(Decimal("%.2f" % e))
-            lista = [df.columns[:,].values.astype(str).tolist()] + values
+            # Adding id. numbers
+            for ii in range(len(values)):
+                values[ii] = [str(ii+1)]+values[ii]
+            lista = [['Id.'] + df.columns[:,].values.astype(str).tolist()] + values
             table = Table(lista, style=ts)
             story.append(table)
         if type(valClass.HarmonicBenchmarks.velocity) != str:
@@ -295,14 +324,16 @@ def write_report(valClass, report_title="validation_report.pdf", debug=False):
     if benchflag:
         story.append(NextPageTemplate('OneCol'))
         story.append(PageBreak())
-        story.append(Paragraph("The Taylor diagram above is a concise statistical summary of how well patterns match each \
+        story.append(Paragraph("Taylor Diagram", styles['Heading2']))
+        story.append(Paragraph("The Taylor diagram below is a concise statistical summary of how well patterns match each \
                                 other in terms of their correlation, their root-mean-square difference and the ratio of \
-                                their variances.",
-                               styles['BodyText']))
+                                their variances.", styles['Justify']))  # , styles['BodyText']))
+        story.append(Paragraph("Measurements' identification numbers (Id.) \
+                                can be found in the table above.", styles['Justify']))  # ,  styles['BodyText']))
         story.append(Spacer(1, 12))
         imNb += 1
         savename = 'tmp_'+str(imNb)+'_plot.png'
-        valClass.taylor_diagram(savepath="./", fname=savename)
+        valClass.taylor_diagram(savepath="./", fname=savename, labels=False)
         # image = Image(savename, width=doc.width , height=doc.height / 2.25)
         # story.append(image)
         story.append(get_image(savename, width=16*cm))

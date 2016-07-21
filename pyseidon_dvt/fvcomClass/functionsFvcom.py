@@ -63,7 +63,39 @@ class FunctionsFvcom:
         print '-Central bathy and elevation added to FVCOM.Grid.-'
 
         if debug:
-            print '...Passed'   
+            print '...Passed'
+
+    def slope(self, debug=False):
+        """
+        This method computes a new variable: 'bathymetric slope' (degrees)
+        -> FVCOM.Grid.slope
+        """
+        x = self._grid.x[:]
+        y = self._grid.y[:]
+        if not hasattr(self._grid, 'triangleXY'):
+            # Mesh triangle
+            if debug:
+                print "Computing triangulation..."
+            trinodes = self._grid.trinodes[:]
+            tri = Tri.Triangulation(x, y, triangles=trinodes)
+            self._grid.triangleXY = tri
+        else:
+            tri = self._grid.triangleXY
+
+        if debug: print "Cubic interpolation..."
+        tci = Tri.CubicTriInterpolator(tri, self._grid.h[:])
+        (Ex, Ey) = tci.gradient(tri.x, tri.y)
+        slope = np.sqrt(Ex**2 + Ey**2)
+
+        if debug: print "Conversion to degrees..."
+        slope = np.rad2deg(np.arctan(slope))
+
+        # Custom return
+        setattr(self._grid, 'slope', slope)
+
+        # Add metadata entry
+        self._History.append('bathymetric slope computed')
+        print '-Bathymetric slope added to FVCOM.Grid.-'
 
     def hori_velo_norm(self, debug=False):
         """
@@ -509,6 +541,8 @@ class FunctionsFvcom:
                 dx_sph =dx_sph+360.0
             pt_x = TPI * np.cos(np.deg2rad(pt_lat + latweight)*0.5) * dx_sph
 
+            if debug: print "coordinates in meters: ", pt_x, pt_y
+
             if var.shape[-1] == self._grid.nnode:
                 varInterp = interpN_at_pt(var, pt_x, pt_y, index, trinodes,
                                           self._grid.aw0, self._grid.awx,
@@ -648,12 +682,16 @@ class FunctionsFvcom:
         n2 = self._grid.triele[:,1]
         n3 = self._grid.triele[:,2]
         
-        ##change end bound indices 
-        #test = self._grid.triele.shape[0]
+        ##change end bound indices
         test = -1
         n1[np.where(n1==test)[0]] = 0
         n2[np.where(n2==test)[0]] = 0
         n3[np.where(n3==test)[0]] = 0
+        # double check due to chunking and nans
+        test = self._grid.triele.shape[0]
+        n1[np.where(n1>=test)[0]] = 0
+        n2[np.where(n2>=test)[0]] = 0
+        n3[np.where(n3>=test)[0]] = 0
         #TR quick fix: due to error with pydap.proxy.ArrayProxy
         #              not able to cop with numpy.int
         N1 = []
@@ -672,19 +710,37 @@ class FunctionsFvcom:
         dvdx = np.zeros((self._grid.ntime,self._grid.nele))
         dudy = np.zeros((self._grid.ntime,self._grid.nele))
 
-        j=0
-        for i in t:
-            dvdx[j,:] = np.multiply(self._grid.a1u[0,:], self._var.va[i,:]) \
-                      + np.multiply(self._grid.a1u[1,:], self._var.va[i,N1]) \
-                      + np.multiply(self._grid.a1u[2,:], self._var.va[i,N2]) \
-                      + np.multiply(self._grid.a1u[3,:], self._var.va[i,N3])
-            dudy[j,:] = np.multiply(self._grid.a2u[0,:], self._var.ua[i,:]) \
-                      + np.multiply(self._grid.a2u[1,:], self._var.ua[i,N1]) \
-                      + np.multiply(self._grid.a2u[2,:], self._var.ua[i,N2]) \
-                      + np.multiply(self._grid.a2u[3,:], self._var.ua[i,N3])
-            j+=1
-        if debug:
-            print "loop number ", i
+        try:
+            j=0
+            for i in t:
+                dvdx[j,:] = np.multiply(self._grid.a1u[0,:], self._var.va[i,:]) \
+                          + np.multiply(self._grid.a1u[1,:], self._var.va[i,N1]) \
+                          + np.multiply(self._grid.a1u[2,:], self._var.va[i,N2]) \
+                          + np.multiply(self._grid.a1u[3,:], self._var.va[i,N3])
+                dudy[j,:] = np.multiply(self._grid.a2u[0,:], self._var.ua[i,:]) \
+                          + np.multiply(self._grid.a2u[1,:], self._var.ua[i,N1]) \
+                          + np.multiply(self._grid.a2u[2,:], self._var.ua[i,N2]) \
+                          + np.multiply(self._grid.a2u[3,:], self._var.ua[i,N3])
+                j+=1
+            if debug:
+                print "loop number ", i
+        except IndexError:  # Strange error due to netCDF4/utils.py
+            j=0
+            N1 = np.asarray(N1).astype(int)
+            N2 = np.asarray(N2).astype(int)
+            N3 = np.asarray(N3).astype(int)
+            for i in t:
+                dvdx[j,:] = np.multiply(self._grid.a1u[0,:], self._var.va[i,:]) \
+                          + np.multiply(self._grid.a1u[1,:], self._var.va[i,N1]) \
+                          + np.multiply(self._grid.a1u[2,:], self._var.va[i,N2]) \
+                          + np.multiply(self._grid.a1u[3,:], self._var.va[i,N3])
+                dudy[j,:] = np.multiply(self._grid.a2u[0,:], self._var.ua[i,:]) \
+                          + np.multiply(self._grid.a2u[1,:], self._var.ua[i,N1]) \
+                          + np.multiply(self._grid.a2u[2,:], self._var.ua[i,N2]) \
+                          + np.multiply(self._grid.a2u[3,:], self._var.ua[i,N3])
+                j+=1
+            if debug:
+                print "loop number ", i
 
         vort = dvdx - dudy
 
