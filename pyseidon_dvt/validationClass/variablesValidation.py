@@ -39,7 +39,7 @@ class _load_validation:
             self._3D = False
         else:
             self._3D = simulated.Variables._3D
-            
+
         try:
             # Check if times coincide
             obsMax = self.obs.matlabTime[~np.isnan(self.obs.matlabTime)].max()
@@ -72,7 +72,7 @@ class _load_validation:
         # Check which variables are available in the observations for comparison
         self._obs_vars=dir(self.obs)
         if ('lon' and 'lat') not in self._obs_vars:
-            raise PyseidonError("---Observations missing lon/lat comparison is impossible---")  
+            raise PyseidonError("---Observations missing lon/lat comparison is impossible---")
 
         # Check what kind of simulated data it is
         if simulated.__module__ .split('.')[-1] == 'stationClass':
@@ -189,7 +189,9 @@ class _load_validation:
                         vSim = np.squeeze(self.sim.va[self._C,:])
 
                 # Finding the closest Drifter time to simulated data assuming measurement
-                # time step way faster than model one
+                # assuming time step way faster than model one
+                # **possibility of adding a temporal interpolation
+                # here? - KC
                 indClosest = []
                 for i in self._C:
                     ind = np.abs(self.obs.matlabTime[:]-self.sim.matlabTime[i]).argmin()
@@ -246,26 +248,26 @@ class _load_validation:
                 raise PyseidonError("---This type of measurements is not supported yet---")
 
             # This had to be split into two parts so that a time subset could be used.
-            # Specify list of data variables from observations that should be used.    
-            dictlist=['ua','va','u','v','el'] 
+            # Specify list of data variables from observations that should be used.
+            dictlist=['ua','va','u','v','el']
             self._commonlist_data = [var for var in self._obs_vars if var in dictlist]
             if debug:
                 print 'Data variables being used'
-                print self._commonlist_data         
-            obs_mod={}    
+                print self._commonlist_data
+            obs_mod={}
             for key in self._commonlist_data:
                 obs_mod[key] = getattr(self.obs,key)
                 obs_mod[key] = obs_mod[key][c,]
-                
-            # Specify list of nondata variables that should be used.    
+
+            # Specify list of nondata variables that should be used.
             dictlist = ['bins','data']
             self._commonlist_nondata = [var for var in self._obs_vars if var in dictlist]
             if debug:
                 print 'Non data variables being used'
-                print self._commonlist_nondata    
+                print self._commonlist_nondata
             for key in self._commonlist_nondata:
                 obs_mod[key] = getattr(self.obs,key)
-                
+
         else:
             self._obstype = 'drifter'
             obstype = 'Drifter'
@@ -297,7 +299,7 @@ class _load_validation:
                            '_commonlist_data': ['u', 'v']}
 
         if debug: print "..done"
-        
+
         # find save_path
         # self._save_path = ''
         # for s in observed.History:

@@ -25,14 +25,24 @@ class _load_drifter:
         # Pointer to History
         setattr(self, '_History', History)
 
-        self.matlabTime = cls.Data['velocity'].vel_time[:]
-        #Sorting values with increasing time step
-        sortedInd = self.matlabTime.argsort()
-        self.matlabTime.sort()
-        self.lat = cls.Data['velocity'].vel_lat[sortedInd]
-        self.lon = cls.Data['velocity'].vel_lon[sortedInd]
-        self.u = cls.Data['velocity'].u[sortedInd]
-        self.v = cls.Data['velocity'].v[sortedInd]
+        # dealing with new drifter formats which have a new structure -KC
+        if 'velocity' in cls.Data.keys():
+            self.matlabTime = cls.Data['velocity'].vel_time[:]
+            #Sorting values with increasing time step
+            sortedInd = self.matlabTime.argsort()
+            self.matlabTime.sort()
+            self.lat = cls.Data['velocity'].vel_lat[sortedInd]
+            self.lon = cls.Data['velocity'].vel_lon[sortedInd]
+            self.u = cls.Data['velocity'].u[sortedInd]
+            self.v = cls.Data['velocity'].v[sortedInd]
+        else:
+            self.matlabTime = cls.Data['time']
+            sortedInd = self.matlabTime.argsort()
+            self.matlabTime.sort()
+            self.lat = cls.Data['lat'][sortedInd]
+            self.lon = cls.Data['lon'][sortedInd]
+            self.u = cls.Data['u'][sortedInd]
+            self.v = cls.Data['v'][sortedInd]
 
         #-Append message to History field
         start = mattime_to_datetime(self.matlabTime[0])
