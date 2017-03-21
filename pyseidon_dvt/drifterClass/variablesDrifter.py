@@ -2,7 +2,8 @@
 # encoding: utf-8
 
 from __future__ import division
-# import numpy as np
+import numpy as np
+# import numpy.ma as ma
 # from numpy.ma import MaskError
 # import h5py
 from pyseidon_dvt.utilities.miscellaneous import mattime_to_datetime
@@ -25,7 +26,29 @@ class _load_drifter:
         # Pointer to History
         setattr(self, '_History', History)
 
-        # dealing with new drifter formats which have a new structure -KC
+        # KC: some MATLAB files that contain multiple drifters
+        # aggregated into one data structure have spaces between
+        # distinct drifters, and when loaded into scipy produce nans...
+        # can delete rows since array is small, but smarter to mask the array to
+        # avoid slowness allocating new space and copying all the data etc...
+
+        idx_nan = np.squeeze(np.argwhere(np.isnan(cls.Data['u'])))
+        # cls.Data = {k: cls.Data[k] for k in cls.Data if not isnan(cls.Data[k])}
+        ignore = ['__header__', '__globals__','__version__','trim', 'num_drifts']
+        for var in cls.Data.keys():
+            # ignore scalar variables from matlab import
+            if var in ignore:
+                continue
+            # create mask for one variable - assumes
+            if np.isnan(cls.Data[var]).any():
+                idx_nan = np.unique(np.concatenate((idx_nan,
+                        np.squeeze(np.argwhere(np.isnan(cls.Data[var]))))))
+        # apply to other variables
+        for var in cls.Data.keys():
+            if var not in ignore:
+                cls.Data[var] = np.delete(cls.Data[var], idx_nan)
+
+        # KC: dealing with new drifter formats which have a new structure
         if 'velocity' in cls.Data.keys():
             self.matlabTime = cls.Data['velocity'].vel_time[:]
             #Sorting values with increasing time step
